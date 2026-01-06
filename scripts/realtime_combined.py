@@ -4,6 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import cv2, numpy as np, pandas as pd
 from collections import deque
 import tensorflow as tf
+import joblib
 
 from modules.face_eye_detector import FaceEyeDetector
 from modules.feature_extractor import pupil_from_eye_roi, eye_openness_from_roi, interocular_distance
@@ -12,7 +13,16 @@ from modules.feature_extractor import pupil_from_eye_roi, eye_openness_from_roi,
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 EYE_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "eye_state_model.keras"))
 YAWN_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "yawn_model.keras"))
-STRESS_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "stress_model.h5"))  # match workspace file
+STRESS_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "stress_model.keras"))  # match workspace file
+# Use the model produced by `train_cognitive_load_model.py`
+COGLOAD_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "cognitive_load_model.joblib"))
+COGLOAD_MODEL_XGB = os.path.normpath(os.path.join(BASE_DIR, "models", "cogload_model_xgb_gpu.joblib"))
+COGLOAD_MODEL_LGB = os.path.normpath(os.path.join(BASE_DIR, "models", "cogload_model_lgb_gpu.joblib"))
+# Support both possible scaler filenames produced by different scripts
+COGLOAD_SCALER_PATHS = [
+    os.path.normpath(os.path.join(BASE_DIR, "models", "cogload_scaler.joblib")),
+    os.path.normpath(os.path.join(BASE_DIR, "models", "cognitive_load_scaler.joblib")),
+]
 
 def _safe_load_model(path, name):
     try:
@@ -23,9 +33,36 @@ def _safe_load_model(path, name):
         print(f"Warning: could not load {name} model from {path}: {e}")
         return None
 
+def _safe_load_joblib(path, name):
+    try:
+        m = joblib.load(path)
+        print(f"Loaded {name} model from {path}")
+        return m
+    except Exception as e:
+        print(f"Warning: could not load {name} joblib model from {path}: {e}")
+        return None
+
 eye_model = _safe_load_model(EYE_MODEL_PATH, "eye")
 yawn_model = _safe_load_model(YAWN_MODEL_PATH, "yawn")
 stress_model = _safe_load_model(STRESS_MODEL_PATH, "stress")
+# Prefer the `cognitive_load_model.joblib` produced by your training script; fallback to GPU variants
+cog_model = (_safe_load_joblib(COGLOAD_MODEL_PATH, "cognitive_load") or
+             _safe_load_joblib(COGLOAD_MODEL_XGB, "cogload_xgb") or
+             _safe_load_joblib(COGLOAD_MODEL_LGB, "cogload_lgb"))
+# Load scaler if available (support multiple candidate filenames)
+cog_scaler = None
+for _p in COGLOAD_SCALER_PATHS:
+    cog_scaler = _safe_load_joblib(_p, f"cognitive_load_scaler ({os.path.basename(_p)})")
+    if cog_scaler is not None:
+        break
+
+# Post-load warnings about availability
+if cog_model is None and cog_scaler is None:
+    print("Warning: No cognitive-load model or scaler found; cognitive load predictions disabled.")
+elif cog_model is None:
+    print("Warning: Cognitive-load model not found; predictions will be skipped even though scaler is present.")
+elif cog_scaler is None:
+    print("Warning: Scaler not found; cognitive-load predictions will be skipped even if a model exists.")
 
 # Params
 IMG_SIZE = 128
@@ -38,7 +75,20 @@ EYE_RATIO_LIMIT = 0.6
 YAWN_RATIO_LIMIT = 0.3
 
 detector = FaceEyeDetector()
-cap = cv2.VideoCapture(0)
+
+def open_camera(indices=(0,1,2,3), backends=(cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY)):
+    for idx in indices:
+        for backend in backends:
+            cap = cv2.VideoCapture(idx, backend)
+            if cap.isOpened():
+                print(f"Opened camera idx={idx} backend={backend}")
+                return cap
+            cap.release()
+    return None
+
+cap = open_camera()
+if cap is None or not cap.isOpened():
+    raise RuntimeError("ERROR: could not open any camera. Close other apps and check Windows Camera Privacy settings.")
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640); cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
 feature_window = deque(); time_window = deque()
@@ -213,9 +263,93 @@ while True:
             if op_mean < 0.18:
                 score += 0.08
         score = max(0.0, min(1.0, score))
-        display_text = f"Score:{fmt(score)}  iris_norm:{fmt(iris_norm)}  blink/s:{fmt(blink_rate)}  open:{fmt(op_mean)}"
+
+        # Cognitive load prediction (requires both model and scaler)
+        cog_pred = None
+        cog_prob = None
+        cog_scaled_debug = None
+        try:
+            # Live features
+            live_feats = {
+                'iris_norm': iris_norm,
+                'iris_std': iris_std,
+                'op_mean': op_mean,
+                'blink_rate': blink_rate
+            }
+
+            X_scaled = None
+            if cog_scaler is not None:
+                # Determine expected feature order
+                expected_features = None
+                if hasattr(cog_scaler, 'feature_names_in_'):
+                    expected_features = list(cog_scaler.feature_names_in_)
+                else:
+                    expected_features = ['Pupil_Dilation','Blink_Rate','Fixation_Duration','Saccade_Duration','Speed','Angular_Vel_X','Angular_Vel_Y','Angular_Vel_Z','Steering_Angle','Braking_Response']
+
+                # Map live features into expected features
+                mapping = {
+                    'Pupil_Dilation': live_feats['iris_norm'],    # map iris_norm -> Pupil_Dilation
+                    'Blink_Rate': live_feats['blink_rate'],
+                    'Fixation_Duration': live_feats['op_mean'],   # openness_mean -> Fixation_Duration
+                    'Saccade_Duration': live_feats['iris_std'],   # iris_std -> Saccade_Duration
+                }
+
+                # Fill values: use mapping if available, otherwise use scaler means if present, else 0.0
+                scaler_means = getattr(cog_scaler, 'mean_', None)
+                full_vec = []
+                for i, fname in enumerate(expected_features):
+                    if fname in mapping and mapping[fname] is not None and not (isinstance(mapping[fname], float) and np.isnan(mapping[fname])):
+                        full_vec.append(float(mapping[fname]))
+                    else:
+                        if scaler_means is not None and len(scaler_means) == len(expected_features):
+                            full_vec.append(float(scaler_means[i]))
+                        else:
+                            full_vec.append(0.0)
+
+                X_full = np.array([full_vec])
+                try:
+                    X_scaled = cog_scaler.transform(X_full)
+                    cog_scaled_debug = X_scaled.tolist()[0]
+                    # annotate debug about mapping
+                    # print once per run could be noisy; leave as debug when scaler present
+                except Exception as e:
+                    print(f"Warning: scaler transform failed: {e}")
+                    X_scaled = None
+            else:
+                X_scaled = None
+
+            # only predict if both scaler and model are available
+            if cog_model is not None and X_scaled is not None:
+                pred = cog_model.predict(X_scaled)
+                # support array-like or scalar outputs
+                try:
+                    cog_pred = float(pred[0])
+                except Exception:
+                    cog_pred = float(pred)
+                if hasattr(cog_model, 'predict_proba'):
+                    try:
+                        probs = cog_model.predict_proba(X_scaled)[0]
+                        cog_prob = float(np.max(probs))
+                    except Exception:
+                        cog_prob = None
+            else:
+                # no prediction due to missing model or scaler
+                pass
+        except Exception as e:
+            print(f"Warning: cogload processing failed: {e}")
+
+        # build display text and include scaled features if available
+        display_text = f"Score:{fmt(score)}  iris_norm:{fmt(iris_norm)}  blink/s:{fmt(blink_rate)}  open:{fmt(op_mean)}  cog:{fmt(cog_pred) if cog_pred is not None else 'nan'} p:{fmt(cog_prob) if cog_prob is not None else 'nan'}"
+        if cog_scaled_debug is not None:
+            try:
+                scaled_str = ','.join([f"{v:.3f}" for v in cog_scaled_debug])
+                display_text += f"  scaled:[{scaled_str}]"
+            except Exception:
+                pass
+
+        display_text = f"Score:{fmt(score)}  iris_norm:{fmt(iris_norm)}  blink/s:{fmt(blink_rate)}  open:{fmt(op_mean)}  cog:{fmt(cog_pred) if cog_pred is not None else 'nan'} p:{fmt(cog_prob) if cog_prob is not None else 'nan'}"
         print(display_text)
-        row = {'ts':t_now,'iris_norm':None if iris_norm!=iris_norm else float(iris_norm),'iris_mean_px':None if iris_mean_sm!=iris_mean_sm else float(iris_mean_sm),'iris_std_px':iris_std,'iol_mean_px':None if iol_mean!=iol_mean else float(iol_mean),'openness_mean':None if op_mean!=op_mean else float(op_mean),'blink_rate':blink_rate,'score':score}
+        row = {'ts':t_now,'iris_norm':None if iris_norm!=iris_norm else float(iris_norm),'iris_mean_px':None if iris_mean_sm!=iris_mean_sm else float(iris_mean_sm),'iris_std_px':iris_std,'iol_mean_px':None if iol_mean!=iol_mean else float(iol_mean),'openness_mean':None if op_mean!=op_mean else float(op_mean),'blink_rate':blink_rate,'score':score,'cogload_pred':None if cog_pred is None else float(cog_pred),'cogload_prob':None if cog_prob is None else float(cog_prob)}
         collected.append(row)
 
     # overlays
@@ -237,6 +371,12 @@ while True:
                 f"Stress prob: {stress_prob:.2f}" if stress_prob==stress_prob else "Stress prob: nan",
                 (20,120),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,255),2)
+
+    cog_overlay = f"CogLoad: {fmt(cog_pred) if cog_pred is not None else 'nan'} p:{fmt(cog_prob) if cog_prob is not None else 'nan'}"
+    cv2.putText(frame,
+                cog_overlay,
+                (20,150),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,165,255),2)
 
     if micro_drowsy:
         cv2.putText(frame, "MICRO-DROWSINESS DETECTED",

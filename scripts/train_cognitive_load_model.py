@@ -150,13 +150,13 @@ if hasattr(best_model, 'feature_importances_'):
     print(feature_importance.head(20).to_string(index=False))
 
 # Save the best model
-os.makedirs('../models', exist_ok=True)
-model_path = '../models/cognitive_load_model.joblib'
+os.makedirs('Stressdetector/models', exist_ok=True)
+model_path = 'Stressdetector/models/cognitive_load_model.joblib'
 joblib.dump(best_model, model_path)
 print(f"\n✓ Model saved to: {model_path}")
 
 # Save the scaler
-scaler_path = '../models/cognitive_load_scaler.joblib'
+scaler_path = 'Stressdetector/models/cognitive_load_scaler.joblib'
 joblib.dump(scaler, scaler_path)
 print(f"✓ Scaler saved to: {scaler_path}")
 

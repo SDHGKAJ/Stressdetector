@@ -7,10 +7,25 @@ import xgboost as xgb
 import lightgbm as lgb
 import joblib
 import os
+import argparse
 from datetime import datetime
 
 # Create models directory if it doesn't exist
 os.makedirs('../models', exist_ok=True)
+
+# Argument parsing
+parser = argparse.ArgumentParser(description='Train cognitive load model (GPU) - by default uses your personalized feature set')
+parser.add_argument('--columns', type=str, help='Comma-separated list of feature columns to use (exclude target). Overrides defaults if provided.')
+parser.add_argument('--all-features', action='store_true', help='Use all available features (excluding target) instead of the personalized default.')
+parser.add_argument('--save-selected-columns', type=str, help='Path to save the selected columns as a comma-separated txt file.')
+args = parser.parse_args()
+
+# Personalized feature set (the columns you provided, excluding target)
+PERSONALIZED_FEATURES = [
+    'Pupil_Dilation', 'Blink_Rate', 'Fixation_Duration', 'Saccade_Duration',
+    'Speed', 'Angular_Vel_X', 'Angular_Vel_Y', 'Angular_Vel_Z',
+    'Steering_Angle', 'Braking_Response'
+]
 
 print("Loading cognitive load dataset...")
 start_time = datetime.now()
@@ -18,19 +33,57 @@ start_time = datetime.now()
 # Load the dataset
 df = pd.read_csv('Stressdetector\cognitive_load_dataset.csv')
 
+# Show only personalized columns (that exist in the dataset)
+personal_present = [c for c in PERSONALIZED_FEATURES if c in df.columns]
 print(f"Dataset shape: {df.shape}")
-print(f"Columns: {df.columns.tolist()}")
-print(f"\nFirst few rows:\n{df.head()}")
+print(f"Personalized columns present: {personal_present}")
+if personal_present:
+    print(f"\nFirst few rows (personalized columns):\n{df[personal_present].head()}")
+else:
+    print("\nNo personalized columns found in dataset; showing first few rows of full dataset:\n")
+    print(df.head())
 
-# Prepare data
-X = df.drop('Cognitive_Load', axis=1)
+# Prepare data: selection precedence -> --columns > --all-features > personalized default
+if args.columns:
+    requested = [c.strip() for c in args.columns.split(',') if c.strip()]
+    # Ensure requested columns are within the personalized feature set
+    not_allowed = [c for c in requested if c not in PERSONALIZED_FEATURES]
+    if not_allowed:
+        raise ValueError(f"Columns not allowed. Only the personalized feature set may be used: {not_allowed}")
+    missing = [c for c in requested if c not in df.columns]
+    if missing:
+        raise ValueError(f"Columns not found in dataset: {missing}")
+    if not requested:
+        raise ValueError("No valid columns specified in --columns")
+    selected_cols = requested
+    X = df[selected_cols].copy()
+    print(f"\nUsing specified subset of personalized columns ({len(selected_cols)}): {selected_cols}")
+elif args.all_features:
+    X = df.drop('Cognitive_Load', axis=1)
+    selected_cols = X.columns.tolist()
+    print("\nUsing all feature columns (excluding 'Cognitive_Load').")
+else:
+    # Default to user's personalized feature list
+    selected_cols = PERSONALIZED_FEATURES
+    missing = [c for c in selected_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Personalized default features missing from dataset: {missing}")
+    X = df[selected_cols].copy()
+    print(f"\nUsing personalized default features ({len(selected_cols)}): {selected_cols}")
+
 y = df['Cognitive_Load']
 
 print(f"\nFeatures shape: {X.shape}")
 print(f"Target shape: {y.shape}")
 
-# Handle missing values
+# Handle missing values (on selected features)
 X = X.fillna(X.mean())
+
+# Optionally save selected columns
+if args.save_selected_columns:
+    with open(args.save_selected_columns, 'w') as f:
+        f.write(','.join(selected_cols))
+    print(f"Saved selected columns to: {args.save_selected_columns}")
 
 # Split data
 X_train, X_test, y_train, y_test = train_test_split(
@@ -64,11 +117,11 @@ xgb_model = xgb.XGBRegressor(
     verbosity=1
 )
 
-xgb_model.fit(X_train, y_train)
+xgb_model.fit(X_train_scaled, y_train)
 xgb_time = datetime.now() - xgb_start
 
 # Predictions
-y_pred_xgb = xgb_model.predict(X_test)
+y_pred_xgb = xgb_model.predict(X_test_scaled)
 
 # Evaluation
 xgb_mse = mean_squared_error(y_test, y_pred_xgb)
@@ -98,11 +151,11 @@ lgb_model = lgb.LGBMRegressor(
     verbosity=1
 )
 
-lgb_model.fit(X_train, y_train)
+lgb_model.fit(X_train_scaled, y_train)
 lgb_time = datetime.now() - lgb_start
 
 # Predictions
-y_pred_lgb = lgb_model.predict(X_test)
+y_pred_lgb = lgb_model.predict(X_test_scaled)
 
 # Evaluation
 lgb_mse = mean_squared_error(y_test, y_pred_lgb)
@@ -145,10 +198,10 @@ else:
 
 # Save best model
 joblib.dump(best_model, best_model_path)
-joblib.dump(scaler, '../models/cogload_scaler.joblib')
+joblib.dump(scaler, 'Stressdetector/models/cogload_scaler.joblib')
 
 print(f"\n✓ Best model saved to: {best_model_path}")
-print(f"✓ Scaler saved to: ../models/cogload_scaler.joblib")
+print(f"✓ Scaler saved to: Stressdetector/models/cogload_scaler.joblib")
 
 total_time = datetime.now() - start_time
 print(f"\nTotal training time: {total_time.total_seconds():.2f} seconds")
