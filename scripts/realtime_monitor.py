@@ -6,6 +6,13 @@ from collections import deque
 import cv2
 import numpy as np
 
+# Ensure the project root is on sys.path so sibling packages like `modules` are importable
+# when running this script directly (e.g., `python scripts/realtime_monitor.py`).
+import sys
+ROOT = os.path.dirname(os.path.dirname(__file__))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 from modules.face_eye_detector import FaceEyeDetector
 from modules.feature_extractor import pupil_from_eye_roi, eye_openness_from_roi, interocular_distance
 
