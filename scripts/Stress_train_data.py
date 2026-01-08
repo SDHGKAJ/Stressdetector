@@ -4,6 +4,7 @@ import os
 
 IMG_SIZE = 224
 BATCH = 16
+EPOCHS = 10
 
 BASE_PATH = "Stressdetector/Stress_Detection/train"
 CSV_PATH = os.path.join(BASE_PATH, "_classes.csv")
@@ -11,6 +12,12 @@ CSV_PATH = os.path.join(BASE_PATH, "_classes.csv")
 df = pd.read_csv(CSV_PATH)
 df.columns = df.columns.str.strip()
 df = df[["filename", "Stress"]]
+
+df["Stress"] = df["Stress"].astype("float32")
+
+# train / validation split
+train_df = df.sample(frac=0.8, random_state=42)
+val_df = df.drop(train_df.index)
 
 def load_image(filename, label):
     img_path = tf.strings.join([BASE_PATH, "/", filename])
@@ -20,14 +27,38 @@ def load_image(filename, label):
     img = img / 255.0
     return img, label
 
-dataset = tf.data.Dataset.from_tensor_slices(
-    (df["filename"].values, df["Stress"].values)
+train_ds = tf.data.Dataset.from_tensor_slices(
+    (train_df["filename"].values, train_df["Stress"].values)
 )
 
-dataset = dataset.map(load_image).shuffle(500).batch(BATCH)
+val_ds = tf.data.Dataset.from_tensor_slices(
+    (val_df["filename"].values, val_df["Stress"].values)
+)
+
+train_ds = (
+    train_ds
+    .map(load_image, num_parallel_calls=tf.data.AUTOTUNE)
+    .shuffle(500)
+    .batch(BATCH)
+    .prefetch(tf.data.AUTOTUNE)
+)
+
+val_ds = (
+    val_ds
+    .map(load_image, num_parallel_calls=tf.data.AUTOTUNE)
+    .batch(BATCH)
+    .prefetch(tf.data.AUTOTUNE)
+)
+
+data_augmentation = tf.keras.Sequential([
+    tf.keras.layers.RandomFlip("horizontal"),
+    tf.keras.layers.RandomRotation(0.1),
+    tf.keras.layers.RandomZoom(0.1)
+])
 
 model = tf.keras.Sequential([
-    tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(IMG_SIZE,IMG_SIZE,3)),
+    data_augmentation,
+    tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(IMG_SIZE, IMG_SIZE, 3)),
     tf.keras.layers.MaxPooling2D(),
     tf.keras.layers.Conv2D(64, 3, activation="relu"),
     tf.keras.layers.MaxPooling2D(),
@@ -42,5 +73,12 @@ model.compile(
     metrics=["accuracy"]
 )
 
-model.fit(dataset, epochs=10)
+
+model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=EPOCHS
+)
+
+os.makedirs("Stressdetector/models", exist_ok=True)
 model.save("Stressdetector/models/stress_model.keras")

@@ -73,36 +73,29 @@ def main():
         raise RuntimeError("ERROR: could not open any camera. Check camera index and permissions.")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FPS, 30)  # Limit to 30 FPS to reduce lag
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer to reduce latency
 
     # Model paths and loading (respect --no-predict)
     BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+    EYE_STATE_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "eye_state_model.keras"))
+    YAWN_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "yawn_model.keras"))
     STRESS_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "stress_model.keras"))
-    COGLOAD_MODEL_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "cognitive_load_model.joblib"))
-    COGLOAD_MODEL_XGB = os.path.normpath(os.path.join(BASE_DIR, "models", "cogload_model_xgb_gpu.joblib"))
     COGLOAD_MODEL_LGB = os.path.normpath(os.path.join(BASE_DIR, "models", "cogload_model_lgb_gpu.joblib"))
-    COGLOAD_SCALER_CANDIDATES = [
-        os.path.normpath(os.path.join(BASE_DIR, "models", "cogload_scaler.joblib")),
-        os.path.normpath(os.path.join(BASE_DIR, "models", "cognitive_load_scaler.joblib")),
-    ]
+    COGLOAD_SCALER_PATH = os.path.normpath(os.path.join(BASE_DIR, "models", "cogload_scaler.joblib"))
 
     if not args.no_predict:
+        eye_state_model = _safe_load_model(EYE_STATE_MODEL_PATH, "eye_state")
+        yawn_model = _safe_load_model(YAWN_MODEL_PATH, "yawn")
         stress_model = _safe_load_model(STRESS_MODEL_PATH, "stress")
-        cog_model = (_safe_load_joblib(COGLOAD_MODEL_PATH, "cognitive_load") or
-                     _safe_load_joblib(COGLOAD_MODEL_XGB, "cogload_xgb") or
-                     _safe_load_joblib(COGLOAD_MODEL_LGB, "cogload_lgb"))
-        cog_scaler = None
-        for p in COGLOAD_SCALER_CANDIDATES:
-            cog_scaler = _safe_load_joblib(p, f"cognitive_load_scaler ({os.path.basename(p)})")
-            if cog_scaler is not None:
-                break
+        cog_model = _safe_load_joblib(COGLOAD_MODEL_LGB, "cogload_lgb")
+        cog_scaler = _safe_load_joblib(COGLOAD_SCALER_PATH, "cogload_scaler")
 
-        if cog_model is None and cog_scaler is None:
-            print("Warning: No cognitive-load model or scaler found; cognitive load predictions disabled.")
-        elif cog_model is None:
-            print("Warning: Cognitive-load model not found; predictions will be skipped even though scaler is present.")
-        elif cog_scaler is None:
-            print("Warning: Scaler not found; cognitive-load predictions will be skipped even if a model exists.")
+        if cog_model is None or cog_scaler is None:
+            print("Warning: Cognitive load model or scaler not found; cognitive load predictions disabled.")
     else:
+        eye_state_model = None
+        yawn_model = None
         stress_model = None
         cog_model = None
         cog_scaler = None
@@ -143,6 +136,8 @@ def main():
             face_eye_probs = []
             face_yawn_probs = []
             frame_stress_probs = []
+            eye_state_preds = []
+            yawn_preds = []
 
             for d in dets:
                 fx, fy, fw, fh = d['face']
@@ -160,6 +155,19 @@ def main():
                 except Exception:
                     pass
 
+                # Yawn prediction
+                if not args.no_predict and yawn_model is not None:
+                    try:
+                        yawn_img = cv2.resize(face_roi, (224, 224)).astype(np.float32)
+                        yawn_img = yawn_img / 255.0
+                        yawn_img = np.expand_dims(yawn_img, axis=0)
+                        yawn_pred_val = float(yawn_model.predict(yawn_img, verbose=0)[0][0])
+                        yawn_preds.append(yawn_pred_val > YAWN_THRESHOLD)
+                    except Exception:
+                        yawn_preds.append(False)
+                else:
+                    yawn_preds.append(False)
+
                 iol = interocular_distance((fx, fy, fw, fh))
                 eyes = d['eyes'][:2]
 
@@ -174,6 +182,17 @@ def main():
                         pupil_radii.append(r)
                     if op is not None:
                         openness_vals.append(op)
+
+                    # Eye state prediction (closed/open) - on first eye only
+                    if not args.no_predict and eye_state_model is not None and len(eye_state_preds) == 0:
+                        try:
+                            eye_img = cv2.resize(eye_roi, (224, 224)).astype(np.float32)
+                            eye_img = eye_img / 255.0
+                            eye_img = np.expand_dims(eye_img, axis=0)
+                            eye_pred = float(eye_state_model.predict(eye_img, verbose=0)[0][0])
+                            eye_state_preds.append(eye_pred > EYE_CLOSED_THRESHOLD)
+                        except Exception:
+                            pass
 
             # append features to sliding window
             feat = {'pupil_r_px': np.nan, 'openness': np.nan, 'iol_px': np.nan}
@@ -201,8 +220,12 @@ def main():
                 else:
                     blink_state = False
 
-            eye_buffer.append(eye_closed_event)
-            yawn_buffer.append(False)
+            # Append predictions to buffers
+            eye_state_pred = bool(eye_state_preds[0]) if eye_state_preds else False
+            yawn_pred = bool(yawn_preds[0]) if yawn_preds else False
+
+            eye_buffer.append(eye_state_pred)
+            yawn_buffer.append(yawn_pred)
 
             # scoring (run every STEP_S)
             if t_now - last_step >= STEP_S:
@@ -298,10 +321,21 @@ def main():
 
                 collected.append(row)
 
-                # overlays for display
-                cv2.putText(frame, f"Stress prob: {stress_prob:.2f}" if stress_prob==stress_prob else "Stress prob: nan", (20,120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,255),2)
-                cog_overlay = f"CogLoad: {fmt(cog_pred) if cog_pred is not None else 'nan'} p:{fmt(cog_prob) if cog_prob is not None else 'nan'}"
-                cv2.putText(frame, cog_overlay, (20,150), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,165,255),2)
+                # overlays for display - comprehensive metrics
+                y_offset = 30
+                cv2.putText(frame, f"STRESS: {fmt(row['stress_prob'])}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                y_offset += 30
+                cv2.putText(frame, f"CogLoad: {fmt(row['cogload_pred'])}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+                y_offset += 30
+                drowsy_text = "DROWSY!" if row['micro_drowsy'] else "Alert"
+                drowsy_color = (0, 0, 255) if row['micro_drowsy'] else (0, 255, 0)
+                cv2.putText(frame, f"State: {drowsy_text}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, drowsy_color, 2)
+                y_offset += 30
+                cv2.putText(frame, f"Blink Rate: {fmt(row['blink_rate'])}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                y_offset += 25
+                cv2.putText(frame, f"Openness: {fmt(row['openness_mean'])}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                y_offset += 25
+                cv2.putText(frame, f"Pupil: {fmt(row['iris_norm'])}", (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
                 if args.save_output:
                     header = True if not os.path.exists(args.save_output) else False

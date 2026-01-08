@@ -13,6 +13,10 @@ from datetime import datetime
 # Create models directory if it doesn't exist
 os.makedirs('../models', exist_ok=True)
 
+# Get absolute path for models directory
+MODELS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models'))
+os.makedirs(MODELS_DIR, exist_ok=True)
+
 # Argument parsing
 parser = argparse.ArgumentParser(description='Train cognitive load model (GPU) - by default uses your personalized feature set')
 parser.add_argument('--columns', type=str, help='Comma-separated list of feature columns to use (exclude target). Overrides defaults if provided.')
@@ -191,14 +195,14 @@ print(f"\n✓ Best Model: {best_model_name}")
 
 if best_model_name == 'XGBoost':
     best_model = xgb_model
-    best_model_path = '../models/cogload_model_xgb_gpu.joblib'
+    best_model_path = os.path.join(MODELS_DIR, 'cogload_model_xgb_gpu.joblib')
 else:
     best_model = lgb_model
-    best_model_path = '../models/cogload_model_lgb_gpu.joblib'
+    best_model_path = os.path.join(MODELS_DIR, 'cogload_model_lgb_gpu.joblib')
 
 # Save best model
 joblib.dump(best_model, best_model_path)
-joblib.dump(scaler, 'Stressdetector/models/cogload_scaler.joblib')
+joblib.dump(scaler, os.path.join(MODELS_DIR, 'cogload_scaler.joblib'))
 
 print(f"\n✓ Best model saved to: {best_model_path}")
 print(f"✓ Scaler saved to: Stressdetector/models/cogload_scaler.joblib")
