@@ -26,9 +26,7 @@ args = parser.parse_args()
 
 # Personalized feature set (the columns you provided, excluding target)
 PERSONALIZED_FEATURES = [
-    'Pupil_Dilation', 'Blink_Rate', 'Fixation_Duration', 'Saccade_Duration',
-    'Speed', 'Angular_Vel_X', 'Angular_Vel_Y', 'Angular_Vel_Z',
-    'Steering_Angle', 'Braking_Response'
+    'Pupil_Dilation', 'Blink_Rate', 'Fixation_Duration', 'Saccade_Duration'
 ]
 
 print("Loading cognitive load dataset...")
