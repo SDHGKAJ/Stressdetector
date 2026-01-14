@@ -1,14 +1,13 @@
 import cv2
 import numpy as np
-import mediapipe as mp
 import joblib
 import time
 from collections import deque
 score_buffer = deque(maxlen=15)
 
 
-model = joblib.load("cogload_model_lgb_gpu.joblib")
-scaler = joblib.load("cogload_scaler.joblib")
+model = joblib.load("models\cogload_model_lgb_gpu.joblib")
+scaler = joblib.load("models\cogload_scaler.joblib")
 
 FEATURE_ORDER = [
     'Pupil_Dilation',
@@ -16,6 +15,19 @@ FEATURE_ORDER = [
     'Fixation_Duration',
     'Saccade_Duration'
 ]
+
+try:
+    import mediapipe as mp
+    if not hasattr(mp, "solutions"):
+        raise RuntimeError("MediaPipe installed but compiled components missing")
+except Exception as e:
+    raise RuntimeError(
+        "MediaPipe is not usable in this environment.\n"
+        "Use Python 3.10–3.11 and reinstall mediapipe.\n"
+        f"Original error: {e}"
+    )
+
+score_buffer = deque(maxlen=15)
 
 mp_face = mp.solutions.face_mesh
 face_mesh = mp_face.FaceMesh(refine_landmarks=True)
