@@ -6,8 +6,8 @@ from collections import deque
 score_buffer = deque(maxlen=15)
 
 
-model = joblib.load("models\cogload_model_lgb_gpu.joblib")
-scaler = joblib.load("models\cogload_scaler.joblib")
+model = joblib.load("Stressdetector/models/cogload_model_lgb_gpu.joblib")
+scaler = joblib.load("Stressdetector/models/cogload_scaler.joblib")
 
 FEATURE_ORDER = [
     'Pupil_Dilation',
@@ -46,9 +46,9 @@ def eye_aspect_ratio(eye):
     return (A + B) / (2.0 * C)
 
 def cogload_to_label(score):
-    if score < 0.33:
+    if score < 0.50:
         return "LOW", (0, 255, 0)
-    elif score < 0.66:
+    elif score < 1.00:
         return "MEDIUM", (0, 255, 255)
     else:
         return "HIGH", (0, 0, 255)

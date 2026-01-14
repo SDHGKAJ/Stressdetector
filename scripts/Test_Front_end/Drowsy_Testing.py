@@ -38,7 +38,7 @@ WINDOW = 20          # frames (~0.6 sec @ 30fps)
 EYE_CLOSED_TH = 0.6
 YAWN_TH = 0.6
 
-EYE_RATIO_LIMIT = 0.6    # 60% closed
+EYE_RATIO_LIMIT = 0.6  # 60% closed
 YAWN_RATIO_LIMIT = 0.3   # 30% yawning
 
 eye_buffer = deque(maxlen=WINDOW)
