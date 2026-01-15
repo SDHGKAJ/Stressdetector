@@ -4,16 +4,16 @@ import os
 
 IMG_SIZE = 224
 BATCH = 16
-EPOCHS = 10
+EPOCHS = 5
 
 BASE_PATH = "Stressdetector/Stress_Detection/train"
 CSV_PATH = os.path.join(BASE_PATH, "_classes.csv")
 
 df = pd.read_csv(CSV_PATH)
 df.columns = df.columns.str.strip()
-df = df[["filename", "Stress"]]
-
-df["Stress"] = df["Stress"].astype("float32")
+df["label"] = 1 - df["Non"]
+df = df[["filename", "label"]]
+df["label"] = df["label"].astype("float32")
 
 # train / validation split
 train_df = df.sample(frac=0.8, random_state=42)
@@ -28,11 +28,11 @@ def load_image(filename, label):
     return img, label
 
 train_ds = tf.data.Dataset.from_tensor_slices(
-    (train_df["filename"].values, train_df["Stress"].values)
+    (train_df["filename"].values, train_df["label"].values)
 )
 
 val_ds = tf.data.Dataset.from_tensor_slices(
-    (val_df["filename"].values, val_df["Stress"].values)
+    (val_df["filename"].values, val_df["label"].values)
 )
 
 train_ds = (

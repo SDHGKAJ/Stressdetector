@@ -12,7 +12,7 @@ if ROOT not in sys.path:
 from modules.face_eye_detector import FaceEyeDetector
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-STRESS_MODEL_PATH = os.path.join(BASE_DIR, "Stressdetector", "models", "stress_model.keras")
+STRESS_MODEL_PATH = os.path.join(BASE_DIR, "models", "stress_model.keras")
 
 model = tf.keras.models.load_model(STRESS_MODEL_PATH)
 
