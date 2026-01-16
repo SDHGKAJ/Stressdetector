@@ -9,6 +9,9 @@ import joblib
 import os
 import argparse
 from datetime import datetime
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+COGLOAD_THRESHOLD = 0.5  # adjust if needed
+
 
 # Create models directory if it doesn't exist
 os.makedirs('../models', exist_ok=True)
@@ -33,7 +36,7 @@ print("Loading cognitive load dataset...")
 start_time = datetime.now()
 
 # Load the dataset
-df = pd.read_csv('Stressdetector\cognitive_load_dataset.csv')
+df = pd.read_csv('Stressdetector\Stress&CogLoad_Dataset\cognitive_load_dataset.csv')
 
 # Show only personalized columns (that exist in the dataset)
 personal_present = [c for c in PERSONALIZED_FEATURES if c in df.columns]
@@ -171,6 +174,24 @@ print(f"   RMSE: {lgb_rmse:.4f}")
 print(f"   MAE: {lgb_mae:.4f}")
 print(f"   R² Score: {lgb_r2:.4f}")
 
+# ================= CLASSIFICATION METRICS =================
+print("\nClassification Metrics (Derived from Regression Output)")
+
+# Convert continuous cognitive load into binary classes
+# 0 = Low Cognitive Load, 1 = High Cognitive Load
+y_test_cls = (y_test >= COGLOAD_THRESHOLD).astype(int)
+y_pred_cls = (y_pred_lgb >= COGLOAD_THRESHOLD).astype(int)
+
+acc = accuracy_score(y_test_cls, y_pred_cls)
+prec = precision_score(y_test_cls, y_pred_cls)
+rec = recall_score(y_test_cls, y_pred_cls)
+f1 = f1_score(y_test_cls, y_pred_cls)
+
+print(f"Accuracy : {acc:.4f}")
+print(f"Precision: {prec:.4f}")
+print(f"Recall   : {rec:.4f}")
+print(f"F1-Score : {f1:.4f}")
+
 # ============== Model Selection ==============
 print("\n" + "="*60)
 print("MODEL COMPARISON")
@@ -196,11 +217,11 @@ if best_model_name == 'XGBoost':
     best_model_path = os.path.join(MODELS_DIR, 'cogload_model_xgb_gpu.joblib')
 else:
     best_model = lgb_model
-    best_model_path = os.path.join(MODELS_DIR, 'cogload_model_lgb_gpu.joblib')
+    best_model_path = os.path.join('Stressdetector/models/cogload_model_lgb_gpu.joblib')
 
 # Save best model
 joblib.dump(best_model, best_model_path)
-joblib.dump(scaler, os.path.join(MODELS_DIR, 'cogload_scaler.joblib'))
+joblib.dump(scaler, os.path.join('Stressdetector/models/cogload_scaler.joblib'))
 
 print(f"\n✓ Best model saved to: {best_model_path}")
 print(f"✓ Scaler saved to: Stressdetector/models/cogload_scaler.joblib")
