@@ -158,29 +158,51 @@ while cap.isOpened():
 
             # Eye
             eyes = face_dets[0].get("eyes", [])
-            if eyes:
-                ex, ey, ew, eh = eyes[0]
+            eye_closed_votes = []
+
+            for (ex, ey, ew, eh) in eyes[:2]:
+                # ---- DRAW EYE BORDER ----
+                cv2.rectangle(
+                    frame,
+                    (ex, ey),
+                    (ex + ew, ey + eh),
+                    (0, 255, 0),   # green
+                    2
+                )
+
                 eye = frame[ey:ey+eh, ex:ex+ew]
                 if eye.size > 0:
                     eye_img = cv2.resize(eye, (128,128)) / 255.0
                     eye_img = np.expand_dims(eye_img.astype(np.float32), 0)
-                    eye_closed = eye_model.predict(eye_img, verbose=0)[0][0] > EYE_CLOSED_TH
-                    eye_buffer.append(int(eye_closed))
+
+                    prob = eye_model.predict(eye_img, verbose=0)[0][0]
+                    eye_closed_votes.append(prob > EYE_CLOSED_TH)
+
+            if eye_closed_votes:
+                eye_buffer.append(int(np.mean(eye_closed_votes) > 0.5))
             else:
                 eye_buffer.append(0)
 
+
         if len(eye_buffer) == eye_buffer.maxlen:
-            micro_score = max(
-                sum(eye_buffer)/len(eye_buffer),
-                sum(yawn_buffer)/len(yawn_buffer)
-            )
+            eye_ratio = sum(eye_buffer) / len(eye_buffer)
+            yawn_ratio = sum(yawn_buffer) / max(len(yawn_buffer), 1)
+            micro_score = max(eye_ratio, 0.7 * yawn_ratio)
+
         
-        print("Eye ratio:", sum(eye_buffer)/len(eye_buffer) if eye_buffer else 0)
+            print(
+                f"EyeRatio:{eye_ratio:.2f}  "
+                f"YawnRatio:{yawn_ratio:.2f}  "
+                f"Micro:{micro_score:.2f}"
+            )
+
 
 
     stress_text, stress_color = stress_label(stress_score)
-    drowsy_text = "DROWSY" if micro_score > 0.4 else "ALERT"
-    drowsy_color = (0,0,255) if micro_score > 0.6 else (0,255,0)
+    DROWSY_TH = 0.5
+    drowsy_text = "DROWSY" if micro_score > DROWSY_TH else "ALERT"
+    drowsy_color = (0,0,255) if micro_score > DROWSY_TH else (0,255,0)
+
 
     # ---------- DISPLAY ----------
     cv2.putText(frame, f"CogLoad: {cog_text} ({cog_score:.2f})", (20,40),
