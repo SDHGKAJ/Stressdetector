@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-import tensorflow as tf
+# import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
@@ -11,12 +11,10 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 IMG_SIZE = 128
 BATCH_SIZE = 8
 EPOCHS = 10
-
 DATA_DIR = "Stressdetector/Drowsy_Dataset/eye"
 
-# --------------------------------------------------
-# 1. LOAD IMAGE PATHS + LABELS
-# --------------------------------------------------
+#----------LOAD IMAGE PATHS + LABELS--------------
+
 image_paths = []
 labels = []
 
@@ -35,9 +33,8 @@ for label_name in os.listdir(DATA_DIR):
 image_paths = np.array(image_paths)
 labels = np.array(labels)
 
-# --------------------------------------------------
-# 2. TRAIN / TEST SPLIT
-# --------------------------------------------------
+#--------TRAIN / TEST SPLIT------------
+
 X_train, X_test, y_train, y_test = train_test_split(
     image_paths,
     labels,
@@ -46,9 +43,8 @@ X_train, X_test, y_train, y_test = train_test_split(
     stratify=labels
 )
 
-# --------------------------------------------------
-# 3. IMAGE GENERATORS
-# --------------------------------------------------
+#--------------IMAGE GENERATORS--------------
+
 datagen = ImageDataGenerator(rescale=1./255)
 
 def flow_from_paths(paths, labels, shuffle=True):
@@ -70,9 +66,8 @@ def flow_from_paths(paths, labels, shuffle=True):
 train_gen = flow_from_paths(X_train, y_train, shuffle=True)
 test_gen = flow_from_paths(X_test, y_test, shuffle=False)
 
-# --------------------------------------------------
-# 4. MODEL
-# --------------------------------------------------
+
+#-----------------MODEL-------------------
 model = Sequential([
     Conv2D(32, (3,3), activation="relu", input_shape=(IMG_SIZE, IMG_SIZE, 3)),
     MaxPooling2D(2,2),
@@ -92,14 +87,8 @@ model.compile(
     metrics=["accuracy"]
 )
 
-# --------------------------------------------------
-# 5. TRAIN
-# --------------------------------------------------
 model.fit(train_gen, epochs=EPOCHS)
 
-# --------------------------------------------------
-# 6. EVALUATE (Precision, Recall, F1, Accuracy)
-# --------------------------------------------------
 y_prob = model.predict(test_gen).ravel()
 y_pred = (y_prob > 0.5).astype(int)
 y_true = y_test.astype(int)
@@ -115,7 +104,4 @@ print(f"Precision: {precision:.4f}")
 print(f"Recall   : {recall:.4f}")
 print(f"F1-Score : {f1:.4f}")
 
-# --------------------------------------------------
-# 7. SAVE MODEL
-# --------------------------------------------------
 model.save("Stressdetector/models/eye_state_model.keras")

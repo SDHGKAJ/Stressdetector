@@ -12,9 +12,7 @@ EPOCHS = 10
 BASE_PATH = "Stressdetector/Stress&CogLoad_Dataset/train"
 CSV_PATH = os.path.join(BASE_PATH, "_classes.csv")
 
-# --------------------------------------------------
-# 1. LOAD + FIX LABELS
-# --------------------------------------------------
+#---------LOAD + FIX LABELS--------------
 df = pd.read_csv(CSV_PATH)
 df.columns = df.columns.str.strip()
 
@@ -24,9 +22,8 @@ df["label"] = 1 - df["Non"]
 df = df[["filename", "label"]]
 df["label"] = df["label"].astype("float32")
 
-# --------------------------------------------------
-# 2. TRAIN / TEST SPLIT
-# --------------------------------------------------
+#-------------TRAIN / TEST SPLIT-------------
+
 train_df, test_df = train_test_split(
     df,
     test_size=0.2,
@@ -34,9 +31,8 @@ train_df, test_df = train_test_split(
     stratify=df["label"]
 )
 
-# --------------------------------------------------
-# 3. TF.DATA PIPELINE
-# --------------------------------------------------
+#------------TF.DATA PIPELINE-------------
+
 def load_image(filename, label):
     img_path = tf.strings.join([BASE_PATH, "/", filename])
     img = tf.io.read_file(img_path)
@@ -67,9 +63,7 @@ test_ds = (
     .prefetch(tf.data.AUTOTUNE)
 )
 
-# --------------------------------------------------
-# 4. MODEL
-# --------------------------------------------------
+#------------------MODEL----------------
 data_augmentation = tf.keras.Sequential([
     tf.keras.layers.RandomFlip("horizontal"),
     tf.keras.layers.RandomRotation(0.1),
@@ -93,14 +87,8 @@ model.compile(
     metrics=["accuracy"]
 )
 
-# --------------------------------------------------
-# 5. TRAIN
-# --------------------------------------------------
 model.fit(train_ds, epochs=EPOCHS)
 
-# --------------------------------------------------
-# 6. EVALUATE (Accuracy, Precision, Recall, F1)
-# --------------------------------------------------
 y_prob = model.predict(test_ds).ravel()
 y_pred = (y_prob > 0.5).astype(int)
 y_true = test_df["label"].astype(int).values
@@ -116,8 +104,5 @@ print(f"Precision: {precision:.4f}")
 print(f"Recall   : {recall:.4f}")
 print(f"F1-Score : {f1:.4f}")
 
-# --------------------------------------------------
-# 7. SAVE MODEL
-# --------------------------------------------------
 os.makedirs("Stressdetector/models", exist_ok=True)
 model.save("Stressdetector/models/stress_model.keras")
