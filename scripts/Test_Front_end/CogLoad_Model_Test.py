@@ -6,8 +6,8 @@ from collections import deque
 score_buffer = deque(maxlen=15)
 
 
-model = joblib.load("Stressdetector/models/cogload_model_lgb_gpu.joblib")
-scaler = joblib.load("Stressdetector/models/cogload_scaler.joblib")
+model = joblib.load("models/cogload_model_lgb_gpu.joblib")
+scaler = joblib.load("models/cogload_scaler.joblib")
 
 FEATURE_ORDER = [
     'Pupil_Dilation',
