@@ -31,7 +31,7 @@ PERSONALIZED_FEATURES = [
 print("Loading cognitive load dataset...")
 start_time = datetime.now()
 
-df = pd.read_csv('Stress&CogLoad_Dataset\cognitive_load_dataset.csv')
+df = pd.read_csv('Stressdetector\Stress&CogLoad_Dataset\cognitive_load_dataset.csv')
 
 personal_present = [c for c in PERSONALIZED_FEATURES if c in df.columns]
 print(f"Dataset shape: {df.shape}")
@@ -98,39 +98,6 @@ print("\n" + "="*60)
 print("GPU-ACCELERATED MODEL TRAINING")
 print("="*60)
 
-# ============== XGBoost with GPU ==============
-print("\n1. Training XGBoost with GPU acceleration...")
-xgb_start = datetime.now()
-
-xgb_model = xgb.XGBRegressor(
-    n_estimators=100,
-    max_depth=8,
-    learning_rate=0.1,
-    random_state=42,
-    tree_method='hist',  
-    device='cuda:0',  
-    n_jobs=-1,
-    verbosity=1
-)
-
-xgb_model.fit(X_train_scaled, y_train)
-xgb_time = datetime.now() - xgb_start
-
-
-y_pred_xgb = xgb_model.predict(X_test_scaled)
-
-
-xgb_mse = mean_squared_error(y_test, y_pred_xgb)
-xgb_rmse = np.sqrt(xgb_mse)
-xgb_mae = mean_absolute_error(y_test, y_pred_xgb)
-xgb_r2 = r2_score(y_test, y_pred_xgb)
-
-print(f"   Training time: {xgb_time.total_seconds():.2f} seconds")
-print(f"   MSE: {xgb_mse:.4f}")
-print(f"   RMSE: {xgb_rmse:.4f}")
-print(f"   MAE: {xgb_mae:.4f}")
-print(f"   R² Score: {xgb_r2:.4f}")
-
 # ============== LightGBM with GPU ==============
 print("\n2. Training LightGBM with GPU acceleration...")
 lgb_start = datetime.now()
@@ -186,27 +153,8 @@ print("\n" + "="*60)
 print("MODEL COMPARISON")
 print("="*60)
 
-models_comparison = {
-    'XGBoost': {'time': xgb_time.total_seconds(), 'r2': xgb_r2, 'rmse': xgb_rmse},
-    'LightGBM': {'time': lgb_time.total_seconds(), 'r2': lgb_r2, 'rmse': lgb_rmse}
-}
-
-for model_name, metrics in models_comparison.items():
-    print(f"\n{model_name}:")
-    print(f"  Training Time: {metrics['time']:.2f}s")
-    print(f"  R² Score: {metrics['r2']:.4f}")
-    print(f"  RMSE: {metrics['rmse']:.4f}")
-
-
-best_model_name = max(models_comparison, key=lambda x: models_comparison[x]['r2'])
-print(f"\n✓ Best Model: {best_model_name}")
-
-if best_model_name == 'XGBoost':
-    best_model = xgb_model
-    best_model_path = os.path.join(MODELS_DIR, 'cogload_model_xgb_gpu.joblib')
-else:
-    best_model = lgb_model
-    best_model_path = os.path.join('Stressdetector/models/cogload_model_lgb_gpu.joblib')
+best_model = lgb_model
+best_model_path = os.path.join('Stressdetector/models/cogload_model_lgb_gpu.joblib')
 
 
 joblib.dump(best_model, best_model_path)
