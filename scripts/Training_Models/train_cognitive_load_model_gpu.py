@@ -31,7 +31,7 @@ PERSONALIZED_FEATURES = [
 print("Loading cognitive load dataset...")
 start_time = datetime.now()
 
-df = pd.read_csv('Stressdetector\Stress&CogLoad_Dataset\cognitive_load_dataset.csv')
+df = pd.read_csv('Stress&CogLoad_Dataset\cognitive_load_dataset.csv')
 
 personal_present = [c for c in PERSONALIZED_FEATURES if c in df.columns]
 print(f"Dataset shape: {df.shape}")

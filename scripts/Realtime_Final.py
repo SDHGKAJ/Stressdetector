@@ -75,9 +75,9 @@ def eye_aspect_ratio(eye):
     C = np.linalg.norm(eye[0] - eye[3])
     return (A + B) / (2.0 * C)
 def cog_label(score):
-    if score < 0.5:
+    if score < 0.8:
         return "LOW", (0,0,255)
-    elif score < 1.0:
+    elif score < 1.1:
         return "MEDIUM", (0,255,255)
     return "HIGH", (0,255,0)
 def stress_label(score):
@@ -106,7 +106,7 @@ while cap.isOpened():
 
     # ---------- COGNITIVE LOAD ----------
 
-    cog_score = 0
+    cog_score = -0.2
     if mesh_results.multi_face_landmarks:
         lm = mesh_results.multi_face_landmarks[0].landmark
         left_eye_idx = [33,160,158,133,153,144]
@@ -188,7 +188,7 @@ while cap.isOpened():
         if len(eye_buffer) == eye_buffer.maxlen:
             eye_ratio = sum(eye_buffer) / len(eye_buffer)
             yawn_ratio = sum(yawn_buffer) / max(len(yawn_buffer), 1)
-            micro_score = max(eye_ratio, 0.7 * yawn_ratio)
+            micro_score = max(eye_ratio, 0.75 * yawn_ratio)
 
         
             print(
