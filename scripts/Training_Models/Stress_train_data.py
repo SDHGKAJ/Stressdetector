@@ -9,7 +9,7 @@ IMG_SIZE = 224
 BATCH = 16
 EPOCHS = 10
 
-BASE_PATH = "Stressdetector/Stress&CogLoad_Dataset/train"
+BASE_PATH = "Stress&CogLoad_Dataset/train"
 CSV_PATH = os.path.join(BASE_PATH, "_classes.csv")
 
 #---------LOAD + FIX LABELS--------------

@@ -75,9 +75,9 @@ def eye_aspect_ratio(eye):
     C = np.linalg.norm(eye[0] - eye[3])
     return (A + B) / (2.0 * C)
 def cog_label(score):
-    if score < 0.5:
+    if score < 0.85:
         return "LOW", (0,0,255)
-    elif score < 1.0:
+    elif score < 1.05:
         return "MEDIUM", (0,255,255)
     return "HIGH", (0,255,0)
 def stress_label(score):
@@ -106,7 +106,9 @@ while cap.isOpened():
 
     # ---------- COGNITIVE LOAD ----------
 
-    cog_score = 0
+    cog_score = -0.2
+    WINDOW = 15
+    saccade_duration = 0
     if mesh_results.multi_face_landmarks:
         lm = mesh_results.multi_face_landmarks[0].landmark
         left_eye_idx = [33,160,158,133,153,144]
@@ -115,7 +117,7 @@ while cap.isOpened():
         blink = int(ear < 0.2)
         blink_history.append(blink)
         pupil_dilation = np.linalg.norm(left_eye[1] - left_eye[4])
-        blink_rate = sum(blink_history)
+        blink_rate = sum(blink_history) / len(blink_history)
         gaze = np.array([lm[468].x, lm[468].y])
         fixation_duration = 0
         if last_gaze is not None:
@@ -123,12 +125,15 @@ while cap.isOpened():
             if movement < 0.002:
                 fixation_start = fixation_start or time.time()
                 fixation_duration = time.time() - fixation_start
+                if movement >= 0.002 and fixation_start:
+                    saccade_durations.append(movement)
+                saccade_duration = np.mean(saccade_durations) if saccade_durations else 0
             else:
                 if fixation_start:
-                    saccade_durations.append(time.time() - fixation_start)
+                    fixation_duration = time.time() - fixation_start
+                fixation_duration = min(fixation_duration, 2.0) 
                 fixation_start = None
         last_gaze = gaze
-        saccade_duration = np.mean(saccade_durations) if saccade_durations else 0
         features = pd.DataFrame([{
             "Pupil_Dilation": pupil_dilation,
             "Blink_Rate": blink_rate,
@@ -188,7 +193,7 @@ while cap.isOpened():
         if len(eye_buffer) == eye_buffer.maxlen:
             eye_ratio = sum(eye_buffer) / len(eye_buffer)
             yawn_ratio = sum(yawn_buffer) / max(len(yawn_buffer), 1)
-            micro_score = max(eye_ratio, 0.7 * yawn_ratio)
+            micro_score = max(eye_ratio, 0.75 * yawn_ratio)
 
         
             print(
