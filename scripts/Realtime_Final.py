@@ -10,26 +10,34 @@ from collections import deque
 
 # ---------------- PATH SETUP ----------------
 
+import sys
+import os
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
-from Stressdetector.modules.face_eye_detector import FaceEyeDetector
+from modules.face_eye_detector import FaceEyeDetector
 
 # ---------------- MODELS ----------------
 
 # Cognitive Load
 
-cog_model = joblib.load("Stressdetector/models/cogload_model_lgb_gpu.joblib")
-cog_scaler = joblib.load("Stressdetector/models/cogload_scaler.joblib")
+cog_model = joblib.load("models/cogload_model_lgb_gpu.joblib")
+cog_scaler = joblib.load("models/cogload_scaler.joblib")
 
 # Micro-drowsiness
 
-eye_model = tf.keras.models.load_model("Stressdetector/models/eye_state_model.keras")
-yawn_model = tf.keras.models.load_model("Stressdetector/models/yawn_model.keras")
+eye_model = tf.keras.models.load_model("models/eye_state_model.keras")
+yawn_model = tf.keras.models.load_model("models/yawn_model.keras")
 
 # Stress
 
-stress_model = tf.keras.models.load_model("Stressdetector/models/stress_model.keras")
+stress_model = tf.keras.models.load_model("models/stress_model.keras")
 
 # ---------------- PARAMETERS ----------------
 
@@ -159,7 +167,6 @@ while cap.isOpened():
             eyes = face_dets[0].get("eyes", [])
             eye_closed_votes = []
             for (ex, ey, ew, eh) in eyes[:2]:
-                # ---- DRAW EYE BORDER ----
                 cv2.rectangle(
                     frame,
                     (ex, ey),
